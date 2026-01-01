@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -13,7 +12,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Component
 public class LocationBroadcaster {
 
-    private static final long SSE_TIMEOUT_MS = 30 * 60 * 1000;
+    private static final long SSE_TIMEOUT_MS = 15 * 60 * 1000;
     private static final int MAX_CONNECTIONS = 10;
 
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
@@ -29,15 +28,27 @@ public class LocationBroadcaster {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         emitters.add(emitter);
 
-        emitter.onCompletion(() -> emitters.remove(emitter));
-        emitter.onTimeout(() -> emitters.remove(emitter));
-        emitter.onError(e -> emitters.remove(emitter));
+        emitter.onCompletion(() -> {
+            emitters.remove(emitter);
+            log.debug("SSE client disconnected, total clients: {}", emitters.size());
+        });
+        emitter.onTimeout(() -> {
+            emitters.remove(emitter);
+            log.debug("SSE client timed out, total clients: {}", emitters.size());
+        });
+        emitter.onError(e -> {
+            emitters.remove(emitter);
+        });
 
         log.debug("New SSE client subscribed, total clients: {}", emitters.size());
         return emitter;
     }
 
     public void broadcast(Location location) {
+        if (emitters.isEmpty()) {
+            return;
+        }
+
         String json = String.format(
             "{\"deviceId\":\"%s\",\"latitude\":%f,\"longitude\":%f,\"timestamp\":%d}",
             location.getDeviceId(),
@@ -51,16 +62,26 @@ public class LocationBroadcaster {
                 emitter.send(SseEmitter.event()
                         .name("location")
                         .data(json));
-            } catch (IOException e) {
-                emitters.remove(emitter);
-                log.debug("Removed disconnected SSE client");
+            } catch (Exception e) {
+                removeEmitter(emitter);
             }
         }
     }
 
     public void broadcastAll(List<Location> locations) {
+        if (emitters.isEmpty()) {
+            return;
+        }
         for (Location location : locations) {
             broadcast(location);
+        }
+    }
+
+    private void removeEmitter(SseEmitter emitter) {
+        try {
+            emitters.remove(emitter);
+            emitter.complete();
+        } catch (Exception ignored) {
         }
     }
 }

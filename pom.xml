@@ -85,6 +85,12 @@
 			<version>4.0.0</version>
 		</dependency>
 
+		<!-- Spring Security for Basic Auth -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
+
 
 		<dependency>
 			<groupId>org.projectlombok</groupId>
